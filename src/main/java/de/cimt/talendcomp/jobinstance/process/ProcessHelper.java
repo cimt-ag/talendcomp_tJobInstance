@@ -52,7 +52,7 @@ public class ProcessHelper {
 		} else if (isWindows) {
 			return retrieveProcessListForWindows();
 		} else {
-			throw new Exception("OS could not be recognized!");
+			throw new Exception("OS could not be recognized! Environment os.name=" + System.getProperty("os.name"));
 		}
 	}
 	
