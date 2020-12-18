@@ -3,6 +3,8 @@ package de.cimt.talendcomp.jobinstance.test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.text.SimpleDateFormat;
@@ -10,7 +12,9 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.github.benoitduffez.ScriptRunner;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import de.cimt.talendcomp.jobinstance.manage.JobInstanceHelper;
@@ -27,6 +31,17 @@ public class JobInstanceHelperTest {
 		Class.forName("org.postgresql.Driver");
 		Connection conn = DriverManager.getConnection("jdbc:postgresql://" + host + ":" + port + "/postgres", "postgres", "postgres");
 		globalMap.put("connection", conn);
+	}
+
+	@Before
+	public void setup() throws Exception {
+		createConnection();
+		Connection conn = (Connection) globalMap.get("connection");
+
+		ScriptRunner runner = new ScriptRunner(conn, false, false);
+		String file = "scripts/postgresql.sql";
+
+		runner.runScript(new BufferedReader(new FileReader(file)));
 	}
 	
 	@After
