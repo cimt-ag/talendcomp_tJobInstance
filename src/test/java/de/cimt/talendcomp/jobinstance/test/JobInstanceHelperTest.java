@@ -3,8 +3,7 @@ package de.cimt.talendcomp.jobinstance.test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
+import java.io.*;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.text.SimpleDateFormat;
@@ -41,7 +40,8 @@ public class JobInstanceHelperTest {
 		ScriptRunner runner = new ScriptRunner(conn, false, false);
 		String file = "scripts/postgresql.sql";
 
-		runner.runScript(new BufferedReader(new FileReader(file)));
+		InputStream is = getClass().getClassLoader().getResourceAsStream("create_table_pgsql.sql");
+		runner.runScript(new InputStreamReader(is, "utf-8"));
 	}
 	
 	@After

@@ -1,3 +1,5 @@
+CREATE SCHEMA IF NOT EXISTS dwh_manage;
+
 --drop table dwh_manage.job_instances;
 create table dwh_manage.job_instance_status (
    job_instance_id bigint not null,
