@@ -13,7 +13,7 @@ public class TestJID {
 	
 	private long lastId = 0;
 
-	//@Test
+	@Test
 	public void testCreateJIDInBulk() throws Exception {
 		JID jid = new JID();
 		long lastId = 0;
