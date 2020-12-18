@@ -3,6 +3,7 @@ package de.cimt.talendcomp.jobinstance.test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.io.*;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.text.SimpleDateFormat;
@@ -10,7 +11,9 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.github.benoitduffez.ScriptRunner;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import de.cimt.talendcomp.jobinstance.manage.JobInstanceHelper;
@@ -21,9 +24,24 @@ public class JobInstanceHelperTest {
 	SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
 	
 	public void createConnection() throws Exception {
+		String host = System.getProperty("POSTGRES_HOST");
+		String port = System.getProperty("POSTGRES_PORT");
+
 		Class.forName("org.postgresql.Driver");
-		Connection conn = DriverManager.getConnection("jdbc:postgresql://debiandb.local:5432/postgres", "postgres", "postgres");
+		Connection conn = DriverManager.getConnection("jdbc:postgresql://" + host + ":" + port + "/postgres", "postgres", "postgres");
 		globalMap.put("connection", conn);
+	}
+
+	@Before
+	public void setup() throws Exception {
+		createConnection();
+		Connection conn = (Connection) globalMap.get("connection");
+
+		ScriptRunner runner = new ScriptRunner(conn, false, false);
+		String file = "scripts/postgresql.sql";
+
+		InputStream is = getClass().getClassLoader().getResourceAsStream("create_table_pgsql.sql");
+		runner.runScript(new InputStreamReader(is, "utf-8"));
 	}
 	
 	@After
