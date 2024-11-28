@@ -1,5 +1,5 @@
 /**
- * Copyright 2015 Jan Lolling jan.lolling@gmail.com
+ * Copyright 2023 Jan Lolling jan.lolling@gmail.com
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,18 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 public class ProcessHelper {
 	
+	private static Logger LOG = LogManager.getLogger(ProcessHelper.class);
 	private boolean isUnix = false;
 	private boolean isWindows = false;
+	private String unixCommand = "ps -eo pid=";
+	private String unixPidPattern = "([0-9]{1,9})";
+	private String windowsCommand = "tasklist /fo list";
+	private String windowsPidPattern = "PID[:\\s]*([0-9]{1,9})";
 	
 	public ProcessHelper() {}
 	
@@ -48,9 +56,9 @@ public class ProcessHelper {
 	
 	public List<Integer> retrieveProcessList() throws Exception {
 		if (isUnix) {
-			return retrieveProcessListForUnix();
+			return retrieveProcessList(unixCommand, unixPidPattern);
 		} else if (isWindows) {
-			return retrieveProcessListForWindows();
+			return retrieveProcessList(windowsCommand, windowsPidPattern);
 		} else {
 			throw new Exception("OS could not be recognized! Environment os.name=" + System.getProperty("os.name"));
 		}
@@ -64,59 +72,105 @@ public class ProcessHelper {
 		return isWindows;
 	}
 	
-	public List<Integer> retrieveProcessListForUnix() throws Exception {
+	private List<String> getCommandAsList(String command) {
+		if (command == null || command.trim().isEmpty()) {
+			throw new IllegalArgumentException("command cannot be null or empty");
+		}
+		String[] array = command.split("\\s");
+		List<String> cl = new ArrayList<String>();
+		for (String part : array) {
+			if (part != null && part.trim().isEmpty() == false) {
+				cl.add(part.trim());
+			}
+		}
+		return cl;
+	}
+	
+	public List<Integer> retrieveProcessList(String command, String patternStr) throws Exception {
+		LOG.info("Retrieve PIDs with command: '" + command + "' and regex: '" + patternStr + "'");
 		List<Integer> pids = new ArrayList<Integer>();
-		ProcessBuilder pb = new ProcessBuilder("ps", "-eo", "pid");
-		Process process = pb.start();
+		ProcessBuilder pb = new ProcessBuilder(getCommandAsList(command));
+		Process process = null;
+		try {
+			process = pb.start();
+		} catch (Exception ioe) {
+			throw new Exception("Command to get PID list: '" + command + "' failed: " + ioe.getMessage(), ioe);
+		}
 		BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
 		String line = null;
-		Pattern patternPid = Pattern.compile("[0-9]{1,8}");
+		Pattern patternPid = Pattern.compile(patternStr);
 		StringBuilder psCommandResponse = new StringBuilder();
+		int receivedLines = 0;
 		while ((line = br.readLine()) != null) {
+			receivedLines++;
 			line = line.trim();
 			psCommandResponse.append(line);
 			psCommandResponse.append("\n");
+			if (line.isEmpty()) {
+				continue;
+			}
 			Matcher m = patternPid.matcher(line);
 			if (m.find()) {
-				int pid = Integer.parseInt(line);
-				if (pid > 1) {
-					pids.add(pid);
+				if (m.groupCount() == 0) {
+					throw new Exception("The regex to find the PIDs must have at least one group (only the first group will be used). regex: " + patternStr + " command: " + command + " current line: " + line);
 				}
+				if (m.start() < m.end()) {
+	            	String pidStr = m.group(1);
+					int pid = Integer.parseInt(pidStr);
+					if (pid > 1) {
+						pids.add(pid);
+					}
+	            }
 			}
 		}
 		br.close();
+		if (receivedLines == 0) {
+			throw new Exception("The command: '" + command + "' to find PIDs does not have any response");
+		}
 		if (pids.isEmpty()) {
-			System.out.println("No pids could be extracted from the ps command response:\n" + psCommandResponse);
+			throw new Exception("No pids could be extracted by command: '" + command + "' using pattern: '" + patternStr + "' response:\n" + psCommandResponse);
 		}
 		return pids;
 	}
 
-	public List<Integer> retrieveProcessListForWindows() throws Exception {
-		List<Integer> pids = new ArrayList<Integer>();
-		ProcessBuilder pb = new ProcessBuilder("tasklist", "/fo", "list");
-		Process process = pb.start();
-		BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
-		String line = null;
-		Pattern pattern = Pattern.compile("PID[:\\s]*([0-9]{1,6})", Pattern.CASE_INSENSITIVE);
-		StringBuilder psCommandResponse = new StringBuilder();
-		while ((line = br.readLine()) != null) {
-			line = line.trim();
-			psCommandResponse.append(line);
-			psCommandResponse.append("\n");
-			Matcher m = pattern.matcher(line);
-			if (m.find()) {
-				String pidStr = m.group(1);
-				int pid = Integer.parseInt(pidStr);
-				if (pid > 1) {
-					pids.add(pid);
-				}
-			}
+	public String getUnixCommand() {
+		return unixCommand;
+	}
+
+	public void setUnixCommand(String unixCommand) {
+		if (unixCommand != null && unixCommand.trim().isEmpty() == false) {
+			this.unixCommand = unixCommand;
 		}
-		br.close();
-		if (pids.isEmpty()) {
-			System.out.println("No pids could be extracted from the tasklist command response:\n" + psCommandResponse);
+	}
+
+	public String getUnixPidPattern() {
+		return unixPidPattern;
+	}
+
+	public void setUnixPidPattern(String unixPidPattern) {
+		if (unixPidPattern != null && unixPidPattern.trim().isEmpty() == false) {
+			this.unixPidPattern = unixPidPattern;
 		}
-		return pids;
+	}
+
+	public String getWindowsCommand() {
+		return windowsCommand;
+	}
+
+	public void setWindowsCommand(String windowsCommand) {
+		if (windowsCommand != null && windowsCommand.trim().isEmpty() == false) {
+			this.windowsCommand = windowsCommand;
+		}
+	}
+
+	public String getWindowsPidPattern() {
+		return windowsPidPattern;
+	}
+
+	public void setWindowsPidPattern(String windowsPidPattern) {
+		if (windowsPidPattern != null && windowsPidPattern.trim().isEmpty() == false) {
+			this.windowsPidPattern = windowsPidPattern;
+		}
 	}
 	
 }

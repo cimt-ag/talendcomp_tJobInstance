@@ -1,0 +1,65 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+    	org.talend.core.model.utils.NodeUtil
+    " 
+%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode) codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    boolean cleanupByWorkItem = "true".equals(ElementParameterParser.getValue(node, "__CLEANUP_BY_WORKITEM__"));
+    boolean closeConnection = "true".equals(ElementParameterParser.getValue(node, "__CLOSE_CONNECTION__"));
+    boolean enableOkHashCheck = "true".equals(ElementParameterParser.getValue(node, "__CHECK_ALL_COMPONENTS_FINISHED__"));
+    String startComp = ElementParameterParser.getValue(node, "__JOB_START_COMP__");
+	INode startCompNode = NodeUtil.getNodeByUniqueName(node.getProcess(), startComp);
+    boolean activateJMX = "true".equals(ElementParameterParser.getValue(startCompNode, "__ACTIVATE_JMX__"));
+%>
+	// extract return codes and messages from globalMap
+	de.cimt.talendcomp.jobinstance.manage.JobExit exit = de.cimt.talendcomp.jobinstance.manage.JobInstanceHelper.retrieveJobReturn(globalMap, errorCode); 
+	errorCode = exit.getCode();
+	// in case of the pre job failed we cannot do anything!
+	if (<%=cid%> != null) {
+	   // give it back to the component for the update in the database
+	   <%=cid%>.setReturnCode(exit.getCode());
+	   <%=cid%>.setReturnMessage(exit.getMessage());
+		if (<%=cid%>.getReturnMessage() != null) {
+			globalMap.put("<%=cid%>_RETURN_MESSAGE", <%=cid%>.getReturnMessage());
+		}
+		int <%=cid%>_returnCode = <%=cid%>.getReturnCode();
+<% if (enableOkHashCheck) { %>
+		if (<%=cid%>_returnCode == 0) {
+			// check if we miss a failure
+			for (java.util.Map.Entry<String, Boolean> okHashEntry : ok_Hash.entrySet()) {
+				if (okHashEntry.getValue() == false && okHashEntry.getKey().equals("<%=cid%>") == false) {
+					<%=cid%>_returnCode = 1; // default error code for failed sub jobs
+					<%=cid%>.setReturnCode(<%=cid%>_returnCode);
+					if (<%=cid%>.getReturnMessage() == null || <%=cid%>.getReturnMessage().isEmpty()) {
+						<%=cid%>.setReturnMessage("Error in component " + okHashEntry.getKey());
+					}
+					break;
+				}	
+			}
+		}
+<% } %>
+		globalMap.put("<%=cid%>_RETURN_CODE", <%=cid%>_returnCode);
+		try {
+			<%=cid%>.updateEntry();
+<%  if (cleanupByWorkItem) { %>
+			// cleanup previous job instances with the same work item
+			globalMap.put("<%=cid%>_DELETED_PREVIOUS_JOB_INSTANCES", <%=cid%>.cleanupByWorkItem());
+<%  } %>
+<%  if (closeConnection) { %>
+		<%=cid%>.closeConnection();
+<%  } %>
+		} catch (Exception e) {
+			globalMap.put("<%=cid%>_ERROR_MESSAGE", e.getMessage());
+			throw e;
+		}
+<%	if (activateJMX) { %>
+   	<%=cid%>.unregisterTalendJobMBean();
+<%	} %>
+	} // if (<%=cid%> != null)
+	

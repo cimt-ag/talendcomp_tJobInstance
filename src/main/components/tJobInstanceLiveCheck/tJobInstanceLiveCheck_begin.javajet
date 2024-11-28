@@ -1,0 +1,127 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+	" 
+%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode) codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    boolean useDataSource = "true".equals(ElementParameterParser.getValue(node, "__USE_DATA_SOURCE__"));
+    boolean useDataSourceAsDbName = "true".equals(ElementParameterParser.getValue(node, "__USE_DATA_SOURCE_ALIAS_AS_DBNAME__"));
+    String dataSourceAlias = ElementParameterParser.getValue(node, "__DATA_SOURCE_ALIAS__");
+    String connectionComp = ElementParameterParser.getValue(node, "__CONNECTION__");
+	boolean closeConnection = useDataSource || "true".equals(ElementParameterParser.getValue(node, "__CLOSE_CONNECTION__"));
+    String tableName = ElementParameterParser.getValue(node, "__TABLE_NAME__");
+    String schemaName = ElementParameterParser.getValue(node, "__SCHEMA_NAME__");
+    IConnection conn = null;
+    if (node.getOutgoingConnections().size() > 0) {
+    	conn = node.getOutgoingConnections().get(0);
+    }
+    String unixCommand = ElementParameterParser.getValue(node, "__ALTERNATIVE_UNIX_COMMAND__");
+    if (unixCommand == null || unixCommand.trim().isEmpty()) {
+    	unixCommand = "null";
+    }
+    String windowsCommand = ElementParameterParser.getValue(node, "__ALTERNATIVE_WINDOWS_COMMAND__");
+    if (windowsCommand == null || windowsCommand.trim().isEmpty()) {
+    	windowsCommand = "null";
+    }
+	String unixPidPattern = ElementParameterParser.getValue(node, "__ALTERNATIVE_UNIX_PID_PATTERN__");
+    if (unixPidPattern == null || unixPidPattern.trim().isEmpty()) {
+    	unixPidPattern = "null";
+    }
+	String windowsPidPattern = ElementParameterParser.getValue(node, "__ALTERNATIVE_WINDOWS_PID_PATTERN__");
+    if (windowsPidPattern == null || windowsPidPattern.trim().isEmpty()) {
+    	windowsPidPattern = "null";
+    }
+    String delay = ElementParameterParser.getValue(node, "__DELAY_START_TIME_FOR_DEAD_CHECK__");
+    if (delay == null || delay.trim().isEmpty()) {
+    	delay = "null";
+    }
+%>
+	// instantiate the job instance helper
+	de.cimt.talendcomp.jobinstance.manage.JobInstanceHelper <%=cid%> = new de.cimt.talendcomp.jobinstance.manage.JobInstanceHelper();
+	// setup table meta data
+<%  if (tableName != null && tableName.trim().isEmpty() == false) { %>
+	<%=cid%>.setTableName(<%=tableName%>);
+<%  } %>
+<%  if (useDataSource) {%>
+	{
+		java.util.Map<String, routines.system.TalendDataSource> dataSources = (java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+		if (dataSources == null) {
+			throw new Exception("No data sources available in this job!");
+		}
+		if (dataSources.get(<%=dataSourceAlias%>) == null) {
+			throw new Exception("No source data source available. Alias: " + <%=dataSourceAlias%>);
+		}
+		<%=cid%>.setConnection(dataSources.get(<%=dataSourceAlias%>).getConnection());
+	}
+<% } else { %>
+	<%=cid%>.setConnection((java.sql.Connection) globalMap.get("conn_<%=connectionComp%>"));
+<% } %>
+<%  if (schemaName != null && schemaName.trim().isEmpty() == false) { %>
+	<%=cid%>.setSchemaName(<%=schemaName%>);
+<%  } else if (useDataSource && useDataSourceAsDbName) {%>
+   <%=cid%>.setSchemaName(<%=dataSourceAlias%>);
+<%  } else {%>
+	{
+		String schemaName = (String) globalMap.get("dbschema_<%=connectionComp%>");
+		if (schemaName == null) {
+			schemaName = (String) globalMap.get("db_<%=connectionComp%>");
+		}
+		if (schemaName == null) {
+			schemaName = (String) globalMap.get("tableschema_<%=connectionComp%>");
+		}
+		if (schemaName == null) {
+			schemaName = (String) globalMap.get("schema_<%=connectionComp%>");
+		}
+		if (schemaName == null) {
+			schemaName = (String) globalMap.get("dbname_<%=connectionComp%>");
+		}
+		if (schemaName != null) {
+			<%=cid%>.setSchemaName(schemaName);
+		}
+	}
+<% } %>
+    // set job data
+	globalMap.put("<%=cid%>", <%=cid%>);
+	globalMap.put("<%=cid%>_HOST_NAME", <%=cid%>.getHostName());
+	java.util.List<de.cimt.talendcomp.jobinstance.manage.JobInfo> listDiedInstances_<%=cid%> = new java.util.ArrayList<de.cimt.talendcomp.jobinstance.manage.JobInfo>();
+	// set alternative commands and filter pattern to extract PIDs 
+	<%=cid%>.setUnixCommand(<%=unixCommand%>);
+	<%=cid%>.setWindowsCommand(<%=windowsCommand%>);
+	<%=cid%>.setUnixPidPattern(<%=unixPidPattern%>);
+	<%=cid%>.setWindowsPidPattern(<%=windowsPidPattern%>);
+	// collect PIDs and cleanup job instance status entries
+	<%=cid%>.setDelayForCheckInstancesInSec(<%=delay%>);
+	try {
+		listDiedInstances_<%=cid%> = <%=cid%>.cleanupBrokenJobInstances();
+	} catch (Exception e) {
+		globalMap.put("<%=cid%>_ERROR_MESSAGE", e.getMessage());
+		throw e;
+	} finally {
+<%  if (closeConnection) { %>
+		<%=cid%>.closeConnection();
+<%  } %>
+	}
+	globalMap.put("<%=cid%>_COUNT_RUNNING_PROCESSES", <%=cid%>.getCountProcesses());
+	globalMap.put("<%=cid%>_COUNT_RUNNING_JOB_INSTANCES", <%=cid%>.getCountRunningJobInstances());
+	globalMap.put("<%=cid%>_COUNT_BROKEN_JOB_INSTANCES", <%=cid%>.getCountBrokenInstances());
+<%  if (conn != null) { %>
+	int count_<%=cid%> = 0;
+	for (de.cimt.talendcomp.jobinstance.manage.JobInfo instance : listDiedInstances_<%=cid%>) {
+    	<%=conn.getName()%> = new <%=conn.getName()%>Struct(); // to avoid cell value reusing in errors
+		<%=conn.getName()%>.JOB_INSTANCE_ID = instance.getJobInstanceId();
+		<%=conn.getName()%>.JOB_NAME = instance.getName();
+		<%=conn.getName()%>.JOB_TALEND_PID = instance.getGuid();
+		<%=conn.getName()%>.JOB_HOST_NAME = instance.getHostName();
+		<%=conn.getName()%>.JOB_HOST_PID = instance.getHostPid();
+		<%=conn.getName()%>.JOB_WORK_ITEM = instance.getWorkItem();
+		<%=conn.getName()%>.JOB_STARTED_AT = instance.getStartDate();
+		count_<%=cid%>++;
+<%  } %>
+
+	

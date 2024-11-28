@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Jan Lolling jan.lolling@gmail.com
+ * Copyright 2024 Jan Lolling jan.lolling@gmail.com
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,15 +39,15 @@ import java.util.TimeZone;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import de.cimt.talendcomp.jobinstance.jmx.TalendJobInfoMXBean;
 import de.cimt.talendcomp.jobinstance.process.ProcessHelper;
 
 public class JobInstanceHelper {
 	
-	private final static Logger logger = LoggerFactory.getLogger(JobInstanceHelper.class);
+	private final static Logger logger = LogManager.getLogger(JobInstanceHelper.class);
 	public static final String TABLE_JOB_INSTANCE_STATUS = "JOB_INSTANCE_STATUS";
 	public static final String VIEW_JOB_INSTANCE_STATUS = "JOB_INSTANCE_STATUS_VIEW";
 	public static final String JOB_INSTANCE_ID = "JOB_INSTANCE_ID";
@@ -107,6 +107,7 @@ public class JobInstanceHelper {
 	private boolean useViewToReadStatus = false;
 	private boolean useGeneratedJID = false;
 	private static JID jid = new JID();
+	private int delayForCheckInstancesInSec = 0;
 	
 	public JobInstanceHelper() {
 		currentJobInfo = new JobInfo();
@@ -1543,6 +1544,39 @@ public class JobInstanceHelper {
 	private int countBrokenInstances = 0;
 	private Date lastSystemStart = null;
 	
+	private String unixCommand = "ps -eo pid=";
+	private String unixPidPattern = "([0-9]{1,8})";
+	private String windowsCommand = "tasklist /fo list";
+	private String windowsPidPattern = "PID[:\\s]*([0-9]{1,6})";
+	
+	public void setUnixCommand(String unixCommand) {
+		if (unixCommand != null && unixCommand.trim().isEmpty() == false) {
+			this.unixCommand = unixCommand;
+		}
+	}
+
+	public String getUnixPidPattern() {
+		return unixPidPattern;
+	}
+
+	public void setUnixPidPattern(String unixPidPattern) {
+		if (unixPidPattern != null && unixPidPattern.trim().isEmpty() == false) {
+			this.unixPidPattern = unixPidPattern;
+		}
+	}
+
+	public void setWindowsCommand(String windowsCommand) {
+		if (windowsCommand != null && windowsCommand.trim().isEmpty() == false) {
+			this.windowsCommand = windowsCommand;
+		}
+	}
+
+	public void setWindowsPidPattern(String windowsPidPattern) {
+		if (windowsPidPattern != null && windowsPidPattern.trim().isEmpty() == false) {
+			this.windowsPidPattern = windowsPidPattern;
+		}
+	}
+
 	public List<JobInfo> cleanupBrokenJobInstances() throws Exception {
 		checkConnection(startConnection);
 		countRunningJobInstances = 0;
@@ -1550,13 +1584,11 @@ public class JobInstanceHelper {
 		String hostName = currentJobInfo.getHostName();
 		final java.sql.Timestamp endedAt = new java.sql.Timestamp(System.currentTimeMillis());
 		ProcessHelper ph = new ProcessHelper();
+		ph.setUnixCommand(unixCommand);
+		ph.setWindowsCommand(windowsCommand);
+		ph.setUnixPidPattern(unixPidPattern);
+		ph.setWindowsPidPattern(windowsPidPattern);
 		ph.init();
-		final List<Integer> runningPidList = ph.retrieveProcessList();
-		countProcesses = runningPidList.size();
-		if (countProcesses == 0) {
-			throw new Exception("No running OS processes detected, this is not a valid state, abort check! Detected OS: " + (ph.isUnix() ? " Unix" : " Windows"));
-		}
-		debug("Found " + countProcesses + " running processes on the server: " + hostName);
 		if (lastSystemStart != null) {
 			final StringBuilder updateInstanceLastStart = new StringBuilder();
 			updateInstanceLastStart.append("update ");
@@ -1602,11 +1634,16 @@ public class JobInstanceHelper {
 		select.append("' and ");
 		select.append(JOB_ENDED_AT);
 		select.append(" is null");
+		select.append("  and ");
+		select.append(JOB_STARTED_AT);
+		select.append(" < ?");
+		
 		synchronized(startConnection) {
-			Statement stat = startConnection.createStatement();
 			String sql = select.toString();
 			debug(sql);
-			ResultSet rs = stat.executeQuery(sql);
+			PreparedStatement stat = startConnection.prepareStatement(sql);
+			stat.setTimestamp(1, new java.sql.Timestamp(System.currentTimeMillis() - (delayForCheckInstancesInSec * 1000l)));
+			ResultSet rs = stat.executeQuery();
 			while (rs.next()) {
 				runningProcessInstancesList.add(getBrokenJobInfoFromResultSet(rs));
 				countRunningJobInstances++;
@@ -1614,6 +1651,9 @@ public class JobInstanceHelper {
 			rs.close();
 			stat.close();
 		}
+		final List<Integer> runningPidList = ph.retrieveProcessList(); // throws an exception if nothing found
+		countProcesses = runningPidList.size();
+		debug("Found " + countProcesses + " running processes on the server: " + hostName);
 		final List<JobInfo> diedProcessInstances = new ArrayList<JobInfo>();
 		for (JobInfo pi : runningProcessInstancesList) {
 			if (runningPidList.contains(pi.getHostPid()) == false) {
@@ -1974,6 +2014,16 @@ public class JobInstanceHelper {
 	public void setTableNameCounters(String tableNameCounters) {
 		if (tableNameCounters != null && tableNameCounters.trim().isEmpty() == false) {
 			ch.setTableName(tableNameCounters);
+		}
+	}
+
+	public int getDelayForCheckInstancesInSec() {
+		return delayForCheckInstancesInSec;
+	}
+
+	public void setDelayForCheckInstancesInSec(Integer delayForCheckInstancesInSec) {
+		if (delayForCheckInstancesInSec != null) {
+			this.delayForCheckInstancesInSec = delayForCheckInstancesInSec;
 		}
 	}
 	
